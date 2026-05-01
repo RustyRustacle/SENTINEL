@@ -104,8 +104,9 @@ export default function ActionHistory({ actions }: ActionHistoryProps) {
                     <span style={{ color: "#f03050" }}>{Icons.xCircle}</span>
                   )}
                 </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

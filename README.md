@@ -16,11 +16,17 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License" />
 </p>
 
+<p align="center">
+  <a href="https://sentinel-mantle-rwa.vercel.app"><strong>Live Dashboard & Demo »</strong></a>
+</p>
+
 ---
 
 ## 🏛️ System Architecture
 
 SENTINEL operates as a hybrid autonomous system, combining the reasoning capabilities of Large Language Models (LLMs) with the immutable execution and verification of the Mantle Network.
+
+
 
 ```mermaid
 graph TD
@@ -131,6 +137,14 @@ The system computes a composite risk score using five weighted vectors:
    ```bash
    python -m agents
    ```
+
+5. **Run Dashboard**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev            # Local: http://localhost:3000
+   ```
+   Live Production: [sentinel-mantle-rwa.vercel.app](https://sentinel-mantle-rwa.vercel.app)
 
 ---
 
