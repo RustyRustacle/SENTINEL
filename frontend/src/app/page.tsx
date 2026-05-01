@@ -119,7 +119,7 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="footer">
         <div className="footer-inner">
-          <div className="footer-left"><div className="footer-brand"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><path d="M16 2L4 8v8c0 7.2 5.12 13.92 12 16 6.88-2.08 12-8.8 12-16V8L16 2z" stroke="#00f0c0" strokeWidth="1.5" fill="none"/></svg><span className="footer-brand-name">SENTINEL</span></div><span className="footer-text">Mantle Turing Test Hackathon 2026 — AI x RWA Track</span></div>
+          <div className="footer-left"><div className="footer-brand"><img src="/sentinelrwalogo.png" alt="Sentinel Logo" width="20" height="20" /><span className="footer-brand-name">SENTINEL</span></div><span className="footer-text">Mantle Turing Test Hackathon 2026 — AI x RWA Track</span></div>
           <div className="footer-links"><a href="https://docs.mantle.xyz" target="_blank" rel="noopener noreferrer" className="footer-link">Mantle Docs</a><a href="https://explorer.mantle.xyz" target="_blank" rel="noopener noreferrer" className="footer-link">Explorer</a><a href="https://github.com" target="_blank" rel="noopener noreferrer" className="footer-link">GitHub</a></div>
         </div>
       </footer>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Sentinel Banner.png" alt="SENTINEL — Autonomous RWA Risk Guardian" width="100%" />
+  <img src="sentinelbanner.png" alt="SENTINEL — Autonomous RWA Risk Guardian" width="100%" />
 </p>
 
 <p align="center">
