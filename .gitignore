@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Environment
+.env
+.env.local
+
+# Build artifacts
+artifacts/
+cache/
+typechain-types/
+out/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# Hardhat
+coverage/
+coverage.json
+
+# Results
+results/
