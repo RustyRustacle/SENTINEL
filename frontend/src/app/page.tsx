@@ -79,11 +79,20 @@ export default function HomePage() {
           <div className="section-header"><span className="section-tag">Coverage</span><h2 className="section-title">Native Mantle asset monitoring</h2></div>
           <div className="coverage-grid">
             {[
-              { icon: "M", name: "mETH", desc: "Mantle Staked ETH — Liquid staking derivative", addr: "0xcDA8...Aa6E" },
-              { icon: "U", name: "USDY", desc: "Ondo USD Yield — Tokenized T-bill stablecoin", addr: "0x5bE2...c5A6" },
-              { icon: "F", name: "fBTC", desc: "Firebitcoin — Wrapped BTC on Mantle", addr: "0xC96d...6364" },
+              { icon: "/methlogo.png", name: "mETH", desc: "Mantle Staked ETH — Liquid staking derivative", addr: "0xcDA8...Aa6E" },
+              { icon: "/usdylogo.svg", name: "USDY", desc: "Ondo USD Yield — Tokenized T-bill stablecoin", addr: "0x5bE2...c5A6" },
+              { icon: "/fbtclogo.png", name: "fBTC", desc: "Firebitcoin — Wrapped BTC on Mantle", addr: "0xC96d...6364" },
             ].map((a) => (
-              <div key={a.name} className="coverage-card"><div className="coverage-icon">{a.icon}</div><div className="coverage-info"><h3 className="coverage-name">{a.name}</h3><p className="coverage-desc">{a.desc}</p></div><span className="coverage-addr">{a.addr}</span></div>
+              <div key={a.name} className="coverage-card">
+                <div className="coverage-icon">
+                  <img src={a.icon} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '6px' }} />
+                </div>
+                <div className="coverage-info">
+                  <h3 className="coverage-name">{a.name}</h3>
+                  <p className="coverage-desc">{a.desc}</p>
+                </div>
+                <span className="coverage-addr">{a.addr}</span>
+              </div>
             ))}
           </div>
         </div>

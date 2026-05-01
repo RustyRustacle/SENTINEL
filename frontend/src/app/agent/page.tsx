@@ -33,6 +33,12 @@ const ACTIONS = [
   { time: "1h ago", type: "HOLD", asset: "ALL", score: 8, result: "No action needed" },
 ];
 
+const LOGO_MAP: Record<string, string> = {
+  mETH: "/methlogo.png",
+  USDY: "/usdylogo.svg",
+  fBTC: "/fbtclogo.png",
+};
+
 export default function AgentPage() {
   const [revealed, setRevealed] = useState(false);
 
@@ -103,15 +109,21 @@ export default function AgentPage() {
             <h3 className="agent-section-title">{Icons.list}<span>Activity Log</span></h3>
             <div className="card">
               <div className="activity-log">
-                {ACTIONS.map((e, i) => (
-                  <div key={i} className="activity-entry">
-                    <div className="activity-time">{e.time}</div>
-                    <div className={`action-badge ${e.type === "HOLD" ? "hold" : e.type.startsWith("REDUCE") ? "reduce" : "exit"}`}>{e.type}</div>
-                    <div className="activity-asset">{e.asset}</div>
-                    <div className="activity-score">Score: {e.score}</div>
-                    <div className="activity-result">{e.result}</div>
-                  </div>
-                ))}
+                {ACTIONS.map((e, i) => {
+                  const logo = LOGO_MAP[e.asset];
+                  return (
+                    <div key={i} className="activity-entry">
+                      <div className="activity-time">{e.time}</div>
+                      <div className={`action-badge ${e.type === "HOLD" ? "hold" : e.type.startsWith("REDUCE") ? "reduce" : "exit"}`}>{e.type}</div>
+                      <div className="activity-asset" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {logo && <img src={logo} alt={e.asset} style={{ width: '16px', height: '16px', objectFit: 'contain' }} />}
+                        <span>{e.asset}</span>
+                      </div>
+                      <div className="activity-score">Score: {e.score}</div>
+                      <div className="activity-result">{e.result}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

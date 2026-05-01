@@ -28,6 +28,12 @@ function getActionBadgeClass(type: string): string {
   }
 }
 
+const LOGO_MAP: Record<string, string> = {
+  mETH: "/methlogo.png",
+  USDY: "/usdylogo.svg",
+  fBTC: "/fbtclogo.png",
+};
+
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
   return d.toLocaleString("en-US", {
@@ -64,16 +70,23 @@ export default function ActionHistory({ actions }: ActionHistoryProps) {
             </tr>
           </thead>
           <tbody>
-            {actions.map((action) => (
-              <tr key={action.id}>
-                <td>{formatTimestamp(action.timestamp)}</td>
-                <td>
-                  <span className={`action-badge ${getActionBadgeClass(action.actionType)}`}>
-                    {action.actionType}
-                  </span>
-                </td>
-                <td>{action.asset}</td>
-                <td>{action.riskScore}</td>
+            {actions.map((action) => {
+              const logo = LOGO_MAP[action.asset];
+              return (
+                <tr key={action.id}>
+                  <td>{formatTimestamp(action.timestamp)}</td>
+                  <td>
+                    <span className={`action-badge ${getActionBadgeClass(action.actionType)}`}>
+                      {action.actionType}
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {logo && <img src={logo} alt={action.asset} style={{ width: '16px', height: '16px', objectFit: 'contain' }} />}
+                      <span>{action.asset}</span>
+                    </div>
+                  </td>
+                  <td>{action.riskScore}</td>
                 <td>
                   <a
                     href={`https://explorer.mantle.xyz/tx/${action.txHash}`}

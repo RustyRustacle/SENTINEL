@@ -32,12 +32,26 @@ function formatChange(change: number): string {
   return sign + change.toFixed(2) + "%";
 }
 
+const LOGO_MAP: Record<string, string> = {
+  mETH: "/methlogo.png",
+  USDY: "/usdylogo.svg",
+  fBTC: "/fbtclogo.png",
+};
+
 export default function AssetCard({ asset }: AssetCardProps) {
+  const logo = LOGO_MAP[asset.symbol];
+
   return (
     <div className="card asset-card">
       <div className="asset-top">
         <div className="asset-info">
-          <div className="asset-icon">{asset.symbol.charAt(0)}</div>
+          <div className="asset-icon">
+            {logo ? (
+              <img src={logo} alt={asset.symbol} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '4px' }} />
+            ) : (
+              asset.symbol.charAt(0)
+            )}
+          </div>
           <div>
             <div className="asset-name">{asset.symbol}</div>
             <div className="asset-type">{asset.name}</div>
