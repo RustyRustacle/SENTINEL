@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Autonomous On-Chain Risk Guardian for Real-World Assets</strong>
+  <strong>Autonomous On-Chain Risk Guardian for Real-World Assets</strong><br />
+  <em>Off-chain Intelligence ↔ On-chain Protection ↔ Verifiable Reputation</em>
 </p>
 
 <p align="center">
@@ -17,208 +18,138 @@
 
 ---
 
-## Overview
+## 🏛️ System Architecture
 
-**SENTINEL** is an autonomous, multi-agent risk management system deployed on Mantle Network. It continuously monitors real-world asset positions — including **mETH**, **USDY**, and **fBTC** — and executes protective on-chain actions when predefined risk thresholds are breached, without human intervention.
+SENTINEL operates as a hybrid autonomous system, combining the reasoning capabilities of Large Language Models (LLMs) with the immutable execution and verification of the Mantle Network.
 
-Every protective action is recorded as verifiable agent reputation via **ERC-8004**.
+```mermaid
+graph TD
+    subgraph "Data Ingestion Layer"
+        P[Pyth Oracles] --> AE[Agent Engine]
+        R[RedStone Finance] --> AE
+        M[Mantle RPC] --> AE
+        F[FRED TradFi API] --> AE
+    end
 
-> Built for the **Mantle Turing Test Hackathon 2026** — AI x RWA Track
+    subgraph "Risk & Reasoning (Python/LLM)"
+        AE --> RE[Risk Engine: 5-Signal Scoring]
+        RE --> DM[Decision Maker: Claude 3.5 Sonnet]
+        DM --> EP[Execution Payload Generator]
+    end
 
----
+    subgraph "On-Chain Execution (Mantle L2)"
+        EP -- "ECDSA Signed Action" --> SE[SentinelExecutor.sol]
+        SE --> MM[Merchant Moe DEX]
+        SE --> AF[Agni Finance]
+        SE --> IC[INIT Capital]
+        SE -- "Record Action" --> REG[ERC-8004 Registry]
+    end
 
-## Problem
-
-In October 2025, a USDe de-peg triggered **$500M–$1B in forced liquidations** in minutes. No autonomous on-chain guardian existed to prevent cascading losses for RWA holders on Mantle.
-
-## Solution
-
-SENTINEL deploys a fleet of AI agents that **monitor**, **evaluate**, and **act** — reducing exposure, re-hedging positions, and alerting users in real time, all recorded on-chain via ERC-8004 reputation.
-
----
-
-## Architecture
-
-```
-DATA LAYER          RISK ENGINE         DECISION LAYER       EXECUTION
- Pyth Oracles        SentinelAgent       HOLD (GREEN)         SentinelExecutor.sol
- RedStone            LangChain +         REDUCE (YELLOW)      Merchant Moe DEX
- Mantle RPC          Claude Sonnet       EXIT (RED)           Agni Finance
- FRED API            5-Signal Score      HEDGE (PURPLE)       INIT Capital
-                                                              |
-                                                              v
-                                                         ERC-8004 Registry
-                                                         (On-Chain Reputation)
+    REG -- "Reputation Updates" --> AE
 ```
 
----
+## 🛡️ Core Value Proposition
 
-## Project Structure
+In fragmented RWA markets, systemic risks (de-pegs, liquidity crunches, macro shifts) materialize faster than human intervention can respond. **SENTINEL** bridges this gap by providing:
 
-```
-sentinel-rwa/
-├── agents/                   # Python AI Agent
-│   ├── sentinel_agent.py     # Core LangChain agent
-│   ├── risk_engine.py        # 5-signal risk scoring
-│   └── decision_maker.py     # Action selection logic
-├── data/
-│   └── collectors/           # Price, chain, and TradFi data
-├── execution/                # Signing and Mantle tx submission
-├── reputation/               # ERC-8004 client
-├── alerts/                   # Telegram bot alerts
-├── contracts/                # Solidity smart contracts
-│   ├── SentinelExecutor.sol  # On-chain action execution
-│   ├── ERC8004Registry.sol   # Agent identity & reputation
-│   └── interfaces/           # Protocol interfaces
-├── frontend/                 # Next.js monitoring dashboard
-├── scripts/                  # Deploy + backtest scripts
-├── test/                     # Hardhat contract tests
-└── tests/                    # Python unit tests
-```
+1.  **Deterministic Risk Scoring**: A multi-signal engine that quantifies risk from 0–100 based on live oracle and chain data.
+2.  **Autonomous Mitigation**: Programmatic execution of exposure reduction (25%/50%/100%) or hedging without human-in-the-loop latency.
+3.  **ERC-8004 Identity**: Every agent action is recorded on-chain, building a verifiable reputation score that determines the agent's autonomous capital limits.
 
 ---
 
-## Risk Engine
+## 📊 Risk Engine & Decision Matrix
 
-SENTINEL computes a **composite risk score (0–100)** from five weighted signals:
+The system computes a composite risk score using five weighted vectors:
 
-| Signal | Weight | Source |
-|--------|--------|--------|
-| De-peg Risk | 35% | Price deviation from peg |
-| Liquidity Risk | 25% | Pool depth + bid-ask spread |
-| Correlation | 20% | Cross-asset movement correlation |
-| Volatility | 10% | 24h realized volatility |
-| TradFi Macro | 10% | T-bill yield spread vs DeFi |
+| Signal | Weight | Logic |
+| :--- | :--- | :--- |
+| **De-peg Risk** | 35% | $|\text{Price} - \text{Peg Target}|$ deviation analysis. |
+| **Liquidity Risk** | 25% | Pool depth (TVL) vs. slippage for portfolio exit size. |
+| **Correlation** | 20% | Pearson correlation coefficient across Mantle RWA basket. |
+| **Volatility** | 10% | 24h/7d historical vs. implied volatility spikes. |
+| **TradFi Macro** | 10% | T-Bill yield spreads (via FRED) vs. DeFi native yields. |
 
-### Action Matrix
+### Execution Thresholds
 
-| Score | Level | Action |
-|-------|-------|--------|
-| 0–30 | GREEN | HOLD |
-| 31–50 | YELLOW | REDUCE 25% |
-| 51–70 | ORANGE | REDUCE 50% |
-| 71–85 | RED | FULL EXIT or HEDGE |
-| 86–100 | BLACK | IMMEDIATE EXIT |
+| Risk Score | Status | Required Action |
+| :--- | :--- | :--- |
+| `0–30` | **Stable** | `HOLD` / Monitoring only. |
+| `31–50` | **Caution** | `REDUCE_25` - Minor exposure reduction. |
+| `51–70` | **Warning** | `REDUCE_50` - Significant de-risking. |
+| `71–85` | **Danger** | `FULL_EXIT` or `HEDGE` - Immediate protection. |
+| `86–100` | **Critical** | `FULL_EXIT` - Emergency shutdown. |
 
 ---
 
-## Quick Start
+## 🏗️ Technical Stack & Standard
+
+### Smart Contracts (Solidity 0.8.24)
+- **`SentinelExecutor.sol`**: The "hands" of the agent. Verifies EIP-712 style signatures from the authorized AI agent before executing protocol interactions.
+- **`ERC8004Registry.sol`**: The "brain" of the agent's on-chain identity. Tracks reputation and enforces trust tiers.
+
+### AI Engine (Python 3.11)
+- **LangChain & Claude 3.5**: Advanced reasoning for complex risk scenarios.
+- **Web3.py**: Low-level chain interaction and signature generation.
+
+### Security Invariants
+- **ECDSA Verification**: Only the designated agent signer can trigger execution.
+- **Cooldown enforcement**: 300-second (5 min) minimum interval between state-modifying actions per asset.
+- **Slippage Protection**: Hardcoded 1% max slippage for all emergency swaps.
+
+---
+
+## 🚀 Quick Start for Developers
 
 ### Prerequisites
-
+- Node.js v20+ & Bun/NPM
 - Python 3.11+
-- Node.js 20+
-- Git
+- [Mantle Sepolia RPC URL](https://rpc.sepolia.mantle.xyz)
 
-### Setup
+### Installation
 
-```bash
-# Clone
-git clone https://github.com/your-org/sentinel-rwa
-cd sentinel-rwa
+1. **Clone & Install Dependencies**
+   ```bash
+   git clone https://github.com/your-org/sentinel-rwa
+   cd sentinel-rwa
+   npm install
+   pip install -r requirements.txt
+   ```
 
-# Install Node dependencies (contracts)
-npm install
+2. **Environment Configuration**
+   ```bash
+   cp .env.example .env
+   # Populate AGENT_PRIVATE_KEY, RPC_URL, and Contract Addresses
+   ```
 
-# Install Python dependencies (agent)
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r requirements.txt
+3. **Deploy & Verify (Mantle Sepolia)**
+   ```bash
+   npx hardhat run scripts/deploy.ts --network mantleTestnet
+   ```
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your keys
-```
-
-### Compile & Test Contracts
-
-```bash
-npx hardhat compile    # Compile Solidity contracts
-npx hardhat test       # Run 9 contract tests
-```
-
-### Run Dashboard
-
-```bash
-cd frontend
-npm install
-npm run dev            # http://localhost:3000
-```
-
-### Run AI Agent
-
-```bash
-python -m agents       # Starts the monitoring loop
-```
-
-### Run Backtest
-
-```bash
-python scripts/backtest.py --initial-capital 100000
-```
+4. **Initialize Monitoring Loop**
+   ```bash
+   python -m agents
+   ```
 
 ---
 
-## Smart Contracts
+## 🔗 Contract Registry (Mantle Testnet Sepolia)
 
-| Contract | Purpose |
-|----------|---------|
-| `SentinelExecutor.sol` | Accepts signed AI actions, executes swaps/hedges on Mantle |
-| `ERC8004Registry.sol` | On-chain agent identity, action recording, reputation scoring |
-
-### Key Security Features
-
-- ECDSA signature verification for all actions
-- 5-minute cooldown between consecutive actions
-- Risk score threshold enforcement (minimum 40)
-- ReentrancyGuard on state-modifying functions
-- Authorized caller access control
+| Contract | Address |
+| :--- | :--- |
+| **ERC8004Registry** | `0xa6446C060e93A91b00dA94135d784704F27558eb` |
+| **SentinelExecutor** | `0xa3c740c8F64eB59c21743792c10aA7E6e1734160` |
+| **Agent ID** | `0x5252...2ede` |
 
 ---
 
-## ERC-8004 Reputation
+## 📜 License & Disclaimer
 
-Every action builds verifiable on-chain reputation:
+This project is licensed under the MIT License. 
 
-| Score | Trust Level | Capability |
-|-------|-------------|------------|
-| 0–300 | Probationary | Manual review required |
-| 300–500 | Standard | Autonomous up to $50K |
-| 500–700 | Trusted | Autonomous up to $250K |
-| 700–850 | Elite | Autonomous up to $1M |
-| 850–1000 | Sovereign | Full autonomous operation |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| AI Agent | Python, LangChain, Claude Sonnet |
-| Smart Contracts | Solidity 0.8.24, OpenZeppelin v5 |
-| Frontend | Next.js 14, TypeScript, Vanilla CSS |
-| Network | Mantle L2 (Chain ID: 5000) |
-| Oracles | Pyth Network, RedStone Finance |
-| DEX | Merchant Moe, Agni Finance |
-
----
-
-## Token Addresses (Mantle Mainnet)
-
-| Token | Address |
-|-------|---------|
-| mETH | `0xcDA86A272531e8640cD7F1a92c01839711B3Aa6E` |
-| USDY | `0x5bE26527e817998A7206475496fDE1E68957c5A6` |
-| fBTC | `0xC96dE26018A54D51c097160568752c4E3BD6C364` |
-
----
-
-## License
-
-MIT
-
----
+**Disclaimer**: *SENTINEL is an experimental autonomous risk management system built for the Mantle Turing Test Hackathon. Use in production environments with real capital involves significant risk. The authors are not responsible for any financial losses incurred through the use of this software.*
 
 <p align="center">
-  <strong>SENTINEL</strong> — Protecting real value with autonomous intelligence on Mantle Network
+  Built with 🛡️ for <strong>Mantle Turing Test Hackathon 2026</strong>
 </p>
