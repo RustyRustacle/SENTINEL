@@ -975,6 +975,16 @@ a {
 }
 
 .wallet-btn:hover { background: var(--accent-dim); }
+.wallet-btn:disabled { opacity: 0.6; cursor: wait; }
+
+.wallet-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .wallet-btn.connected {
   border-color: var(--border-primary);
@@ -1823,4 +1833,43 @@ a {
   .capabilities-grid { grid-template-columns: 1fr; }
   .contract-grid { grid-template-columns: 1fr; }
   .bot-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WALLET GATE (Feature page)
+   ═══════════════════════════════════════════════════════════════ */
+
+.gate-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.gate-card {
+  text-align: center;
+  max-width: 420px;
+  padding: 48px 40px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+}
+
+.gate-icon {
+  color: var(--accent);
+  margin-bottom: 24px;
+  opacity: 0.7;
+}
+
+.gate-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.gate-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 28px;
 }
