@@ -1,44 +1,35 @@
 // SPDX-License-Identifier: MIT
-// SentinelExecutor.sol — Mantle Network
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/IERC8004.sol";
 import "./interfaces/IMerchantMoe.sol";
 import "./interfaces/IAgniFinance.sol";
 import "./interfaces/IINITCapital.sol";
 
-/**
- * @title SentinelExecutor
- * @notice Primary on-chain execution contract for the Sentinel system.
- *         Accepts signed action instructions from the off-chain AI agent
- *         and executes them atomically on Mantle Network.
- * @dev Enforces access control, action limits, and cooldown periods
- *      to prevent runaway execution. All actions are recorded via ERC-8004.
- */
-contract SentinelExecutor is Ownable, ReentrancyGuard {
-    using ECDSA for bytes32;
+contract SentinelExecutor is Ownable, Pausable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
 
-    // ─── STATE ────────────────────────────────────────────────────
-    IERC8004     public immutable agentRegistry;
-    IMerchantMoe public immutable merchantMoe;
-    IAgniFinance public immutable agniFinance;
-    IINITCapital public immutable initCapital;
+    IERC8004     public agentRegistry;
+    IMerchantMoe public merchantMoe;
+    IAgniFinance public agniFinance;
+    IINITCapital public initCapital;
 
-    bytes32 public immutable agentId;       // ERC-8004 agent identity hash
-    address public immutable agentSigner;   // off-chain agent's signing key
+    bytes32 public agentId;
+    address public agentSigner;
 
-    uint256 public constant MAX_EXPOSURE_BPS = 2000;  // 20% max single asset
+    uint256 public constant MAX_EXPOSURE_BPS = 2000;
     uint256 public constant ACTION_COOLDOWN  = 5 minutes;
     uint256 public lastActionTimestamp;
 
-    // Stable asset for swaps (e.g. USDC or WMNT on Mantle)
     address public stableAsset;
 
-    // ─── EVENTS ───────────────────────────────────────────────────
+    mapping(bytes32 => bool) public usedActionIds;
+
     event ActionExecuted(
         bytes32 indexed actionId,
         uint8   actionType,
@@ -52,15 +43,23 @@ contract SentinelExecutor is Ownable, ReentrancyGuard {
         uint256 correlationScore
     );
     event ReputationUpdated(
-        bytes32 agentId,
+        bytes32 indexed agentId,
         uint256 newScore
     );
     event StableAssetUpdated(
         address oldAsset,
         address newAsset
     );
+    event AgentSignerUpdated(
+        address oldSigner,
+        address newSigner
+    );
+    event ProtocolAddressUpdated(
+        string name,
+        address oldAddr,
+        address newAddr
+    );
 
-    // ─── ACTION TYPES ─────────────────────────────────────────────
     enum ActionType { HOLD, REDUCE_25, REDUCE_50, FULL_EXIT, HEDGE }
 
     struct AgentAction {
@@ -68,88 +67,114 @@ contract SentinelExecutor is Ownable, ReentrancyGuard {
         ActionType actionType;
         address    asset;
         uint256    amount;
-        uint256    riskScore;    // 0 – 100, computed by SentinelAgent
+        uint256    amountOutMin;
+        uint256    riskScore;
         uint256    deadline;
         bytes      signature;
     }
 
-    // ─── CONSTRUCTOR ──────────────────────────────────────────────
     constructor(
         address _agentRegistry,
         address _merchantMoe,
         address _agniFinance,
         address _initCapital,
         bytes32 _agentId,
-        address _agentSigner
+        address _agentSigner,
+        address _stableAsset
     ) Ownable(msg.sender) {
+        require(_agentSigner != address(0), "Sentinel: signer zero");
+        require(_agentRegistry != address(0), "Sentinel: registry zero");
+        require(_stableAsset != address(0), "Sentinel: stableAsset zero");
+
         agentRegistry = IERC8004(_agentRegistry);
         merchantMoe   = IMerchantMoe(_merchantMoe);
         agniFinance   = IAgniFinance(_agniFinance);
         initCapital   = IINITCapital(_initCapital);
         agentId       = _agentId;
         agentSigner   = _agentSigner;
+        stableAsset   = _stableAsset;
     }
 
-    // ─── ADMIN ────────────────────────────────────────────────────
+    function setMerchantMoe(address _addr) external onlyOwner {
+        require(_addr != address(0), "Sentinel: zero address");
+        emit ProtocolAddressUpdated("MerchantMoe", address(merchantMoe), _addr);
+        merchantMoe = IMerchantMoe(_addr);
+    }
 
-    /**
-     * @notice Set the stable asset used as swap destination.
-     */
+    function setAgniFinance(address _addr) external onlyOwner {
+        require(_addr != address(0), "Sentinel: zero address");
+        emit ProtocolAddressUpdated("AgniFinance", address(agniFinance), _addr);
+        agniFinance = IAgniFinance(_addr);
+    }
+
+    function setInitCapital(address _addr) external onlyOwner {
+        require(_addr != address(0), "Sentinel: zero address");
+        emit ProtocolAddressUpdated("InitCapital", address(initCapital), _addr);
+        initCapital = IINITCapital(_addr);
+    }
+
+    function setAgentSigner(address _agentSigner) external onlyOwner {
+        require(_agentSigner != address(0), "Sentinel: signer zero");
+        emit AgentSignerUpdated(agentSigner, _agentSigner);
+        agentSigner = _agentSigner;
+    }
+
     function setStableAsset(address _stableAsset) external onlyOwner {
+        require(_stableAsset != address(0), "Sentinel: stableAsset zero");
         address old = stableAsset;
         stableAsset = _stableAsset;
         emit StableAssetUpdated(old, _stableAsset);
     }
 
-    // ─── CORE EXECUTION ───────────────────────────────────────────
+    function pause() external onlyOwner {
+        _pause();
+    }
 
-    /**
-     * @notice Execute a signed action from the off-chain Sentinel agent.
-     * @dev Verifies signature, deadline, cooldown, and risk threshold
-     *      before executing the protective action.
-     * @param action The signed action struct from the AI agent
-     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     function executeAction(
         AgentAction calldata action
-    ) external nonReentrant {
-        // 1. Verify signature from off-chain agent
+    ) external nonReentrant whenNotPaused {
+        require(!usedActionIds[action.actionId], "Sentinel: action replayed");
+        require(action.amount > 0, "Sentinel: zero amount");
+        require(action.amountOutMin > 0, "Sentinel: zero slippage");
+        require(action.asset != address(0), "Sentinel: asset zero");
+
         bytes32 digest = _hashAction(action);
         require(
-            digest.recover(action.signature) == agentSigner,
+            _verifySignature(digest, action.signature),
             "Sentinel: invalid agent signature"
         );
 
-        // 2. Verify deadline not expired
         require(
             block.timestamp <= action.deadline,
             "Sentinel: action expired"
         );
 
-        // 3. Enforce cooldown
         require(
             block.timestamp >= lastActionTimestamp + ACTION_COOLDOWN,
             "Sentinel: cooldown active"
         );
 
-        // 4. Verify risk score threshold
         require(
-            action.riskScore >= 40,
+            action.riskScore >= 30,
             "Sentinel: risk below threshold"
         );
 
-        // 5. Execute the action
+        usedActionIds[action.actionId] = true;
+
         if (action.actionType == ActionType.REDUCE_25) {
-            _reducePosition(action.asset, action.amount / 4);
+            _reducePosition(action.asset, action.amount / 4, action.amountOutMin / 4);
         } else if (action.actionType == ActionType.REDUCE_50) {
-            _reducePosition(action.asset, action.amount / 2);
+            _reducePosition(action.asset, action.amount / 2, action.amountOutMin / 2);
         } else if (action.actionType == ActionType.FULL_EXIT) {
-            _reducePosition(action.asset, action.amount);
+            _reducePosition(action.asset, action.amount, action.amountOutMin);
         } else if (action.actionType == ActionType.HEDGE) {
             _openHedgePosition(action.asset, action.amount);
         }
-        // ActionType.HOLD — no execution needed
 
-        // 6. Update ERC-8004 reputation
         agentRegistry.recordAction(
             agentId,
             action.actionId,
@@ -167,59 +192,46 @@ contract SentinelExecutor is Ownable, ReentrancyGuard {
         );
     }
 
-    // ─── VIEW FUNCTIONS ───────────────────────────────────────────
-
-    /**
-     * @notice Check if an action can be executed (cooldown elapsed).
-     */
     function canExecute() external view returns (bool) {
-        return block.timestamp >= lastActionTimestamp + ACTION_COOLDOWN;
+        return block.timestamp >= lastActionTimestamp + ACTION_COOLDOWN && !paused();
     }
 
-    /**
-     * @notice Get time remaining on cooldown.
-     */
     function cooldownRemaining() external view returns (uint256) {
         uint256 nextAllowed = lastActionTimestamp + ACTION_COOLDOWN;
         if (block.timestamp >= nextAllowed) return 0;
         return nextAllowed - block.timestamp;
     }
 
-    // ─── EMERGENCY ────────────────────────────────────────────────
-
-    /**
-     * @notice Emergency withdrawal of any ERC-20 token. Owner only.
-     */
     function emergencyWithdraw(
         address token,
         uint256 amount
     ) external onlyOwner {
-        IERC20(token).transfer(msg.sender, amount);
+        IERC20(token).safeTransfer(msg.sender, amount);
     }
 
-    // ─── INTERNAL ─────────────────────────────────────────────────
+    function _reducePosition(address asset, uint256 amount, uint256 minOut) internal {
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        uint256 toSwap = amount > balance ? balance : amount;
+        if (toSwap == 0) return;
 
-    function _reducePosition(address asset, uint256 amount) internal {
-        // Route through Merchant Moe for best execution
-        IERC20(asset).approve(address(merchantMoe), amount);
+        IERC20(asset).safeIncreaseAllowance(address(merchantMoe), toSwap);
         address[] memory path = _buildPath(asset);
         merchantMoe.swapExactTokensForTokens(
-            amount,
-            0,                          // accept any amount out (slippage handled off-chain)
+            toSwap,
+            minOut,
             path,
             address(this),
-            block.timestamp + 300       // 5 min deadline
+            block.timestamp + 300
         );
     }
 
     function _openHedgePosition(address asset, uint256 amount) internal {
-        // Deposit into Agni Finance short vault
-        IERC20(asset).approve(address(agniFinance), amount);
-        agniFinance.openShort(
-            asset,
-            amount,
-            2e18    // 2x leverage cap
-        );
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        uint256 toDeposit = amount > balance ? balance : amount;
+        if (toDeposit == 0) return;
+
+        IERC20(asset).safeIncreaseAllowance(address(agniFinance), toDeposit);
+        agniFinance.openShort(asset, toDeposit, 2e18);
     }
 
     function _buildPath(
@@ -231,17 +243,33 @@ contract SentinelExecutor is Ownable, ReentrancyGuard {
         return path;
     }
 
+    function _verifySignature(bytes32 digest, bytes calldata signature) internal view returns (bool) {
+        if (signature.length != 65) return false;
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 0x20))
+            v := byte(0, calldataload(add(signature.offset, 0x40)))
+        }
+        if (v < 27) v += 27;
+        address recovered = ecrecover(digest, v, r, s);
+        return recovered == agentSigner;
+    }
+
     function _hashAction(
         AgentAction calldata a
     ) internal view returns (bytes32) {
         return keccak256(
-            abi.encodePacked(
+            abi.encode(
                 block.chainid,
                 address(this),
                 a.actionId,
                 uint8(a.actionType),
                 a.asset,
                 a.amount,
+                a.amountOutMin,
                 a.riskScore,
                 a.deadline
             )

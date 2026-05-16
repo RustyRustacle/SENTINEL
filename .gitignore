@@ -35,5 +35,8 @@ frontend/node_modules/
 coverage/
 coverage.json
 
+# Agent instructions
+AGENTS.md
+
 # Results
 results/

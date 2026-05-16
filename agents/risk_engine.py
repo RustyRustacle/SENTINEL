@@ -12,6 +12,7 @@ Computes a 0-100 risk score from five weighted signals:
 Calibrated against the October 2025 USDe de-peg incident.
 """
 
+import json
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict
@@ -169,3 +170,11 @@ class RiskEngine:
             return 50
         else:
             return 20
+
+    def compute_risk_score_for_agent(self, snapshot_str: str = "") -> str:
+        try:
+            snapshot = json.loads(snapshot_str) if snapshot_str else {}
+            score = self.compute_risk_score(snapshot)
+            return json.dumps(score.to_dict())
+        except Exception as e:
+            return json.dumps({"error": str(e), "total": 50, "level": "YELLOW"})

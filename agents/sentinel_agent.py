@@ -1,12 +1,3 @@
-# agents/sentinel_agent.py
-"""
-SentinelAgent — Core LangChain agent for autonomous RWA risk management.
-
-Monitors mETH, USDY, and fBTC positions on Mantle Network.
-Executes protective on-chain actions when risk thresholds are breached.
-Records all decisions via ERC-8004 for verifiable agent reputation.
-"""
-
 import asyncio
 import hashlib
 import time
@@ -54,7 +45,6 @@ Always consider gas costs and slippage before executing.
 
 
 class SentinelAgent:
-    """Main agent orchestrator — runs the monitoring loop."""
 
     def __init__(self, config: dict):
         self.llm = ChatAnthropic(
@@ -65,11 +55,18 @@ class SentinelAgent:
         self.aggregator = DataAggregator(config)
         self.risk_engine = RiskEngine(config)
         self.decision = DecisionMaker(config)
-        self.signer = ActionSigner(config.get("AGENT_PRIVATE_KEY", ""))
+        self.signer = ActionSigner(
+            config.get("AGENT_PRIVATE_KEY", ""),
+            config.get("SENTINEL_EXECUTOR_ADDRESS", ""),
+        )
         self.submitter = MantleSubmitter(config)
         self.erc8004 = ERC8004Client(config)
-        self.alerts = AlertService(config.get("TELEGRAM_BOT_TOKEN", ""))
+        self.alerts = AlertService(
+            config.get("TELEGRAM_BOT_TOKEN", ""),
+            config.get("TELEGRAM_CHAT_ID", ""),
+        )
         self.agent_id = config.get("AGENT_ID", "")
+        self.sentinel_address = config.get("SENTINEL_EXECUTOR_ADDRESS", "")
         self.interval = int(config.get("MONITORING_INTERVAL_SECONDS", 30))
         self.tools = self._build_tools()
         self.executor = self._build_executor()
@@ -82,7 +79,7 @@ class SentinelAgent:
                 description="Fetch current price feeds, on-chain state, and TradFi data for mETH, USDY, and fBTC.",
             ),
             StructuredTool.from_function(
-                func=self.risk_engine.compute_risk_score,
+                func=self.risk_engine.compute_risk_score_for_agent,
                 name="compute_risk_score",
                 description="Compute composite risk score (0-100) from a market snapshot dict.",
             ),
@@ -110,47 +107,53 @@ class SentinelAgent:
         return AgentExecutor(agent=agent, tools=self.tools, verbose=True)
 
     async def run_cycle(self):
-        """Single monitoring cycle — runs every interval."""
         try:
-            result = await asyncio.to_thread(
-                self.executor.invoke,
-                {
-                    "input": (
-                        "Run a full risk assessment cycle. "
-                        "1. Collect current market data snapshot. "
-                        "2. Compute the composite risk score. "
-                        "3. Determine if protective action is needed. "
-                        "4. Report your findings and recommended action."
-                    )
-                },
+            snapshot = await asyncio.to_thread(
+                self.aggregator.get_current_snapshot
+            )
+            risk = self.risk_engine.compute_risk_score(snapshot)
+            action = self.decision.build_action(
+                risk_score=risk.total,
+                asset_symbol="USDY",
+                portfolio_size_usd=100000,
+                slippage_bps=100,
+                reason=f"Risk score {risk.total} ({risk.level}) triggered by {risk.to_dict()}",
             )
 
-            action = self.decision.parse_agent_output(result["output"])
+            logger.info(
+                f"Cycle: risk={risk.total:.1f} ({risk.level}) "
+                f"action={action.action_type if action else 'HOLD'}"
+            )
 
             if action and action.action_type != "HOLD":
                 await self._execute_action(action)
-                logger.info(f"Action executed: {action.action_type} on {action.asset}")
+                logger.info(
+                    f"Action executed: {action.action_type} on {action.asset[:10]}..."
+                )
+                return action
             else:
                 logger.info("Cycle complete — no action needed (HOLD)")
+                return None
 
         except Exception as e:
-            logger.error(f"Cycle error: {e}")
+            logger.error(f"Cycle error: {e}", exc_info=True)
             await self.alerts.send_error(str(e))
+            return None
 
     async def _execute_action(self, action):
-        """Sign and submit a protective action to Mantle."""
         signed = self.signer.sign_action(action)
         tx_hash = await self.submitter.submit(signed)
-        logger.info(f"Transaction submitted: {tx_hash}")
+        logger.info(f"Transaction submitted: {tx_hash[:16]}...")
         await self.alerts.send_action_alert(action, tx_hash)
+        return tx_hash
 
     async def run_forever(self):
-        """Main loop — runs indefinitely."""
         logger.info("=" * 60)
         logger.info("  SENTINEL RWA — Autonomous Risk Guardian")
         logger.info("  Mantle Network (Chain ID: 5000)")
         logger.info("=" * 60)
         logger.info(f"Agent ID: {self.agent_id}")
+        logger.info(f"Executor: {self.sentinel_address}")
         logger.info(f"Monitoring: mETH, USDY, fBTC")
         logger.info(f"Cycle interval: {self.interval}s")
         logger.info("Guardian mode: ACTIVE")
@@ -162,7 +165,6 @@ class SentinelAgent:
 
 
 def main():
-    """Entry point for the Sentinel agent."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
@@ -185,6 +187,9 @@ def main():
         "METH_TOKEN": os.getenv("METH_TOKEN", "0xcDA86A272531e8640cD7F1a92c01839711B3Aa6E"),
         "USDY_TOKEN": os.getenv("USDY_TOKEN", "0x5bE26527e817998A7206475496fDE1E68957c5A6"),
         "FBTC_TOKEN": os.getenv("FBTC_TOKEN", "0xC96dE26018A54D51c097160568752c4E3BD6C364"),
+        "METH_ETH_POOL": os.getenv("METH_ETH_POOL", ""),
+        "USDY_USDC_POOL": os.getenv("USDY_USDC_POOL", ""),
+        "FBTC_BTC_POOL": os.getenv("FBTC_BTC_POOL", ""),
     }
 
     agent = SentinelAgent(config)

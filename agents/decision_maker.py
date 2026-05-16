@@ -1,15 +1,3 @@
-# agents/decision_maker.py
-"""
-DecisionMaker — Maps risk scores to protective actions.
-
-Action Matrix:
-  0-30  GREEN   -> HOLD
-  31-50 YELLOW  -> REDUCE_25
-  51-70 ORANGE  -> REDUCE_50
-  71-85 RED     -> FULL_EXIT or HEDGE
-  86+   BLACK   -> FULL_EXIT (immediate)
-"""
-
 import re
 from dataclasses import dataclass
 from typing import Optional, Dict
@@ -17,17 +5,16 @@ from typing import Optional, Dict
 
 @dataclass
 class ProtectiveAction:
-    """Represents a protective action to be executed on-chain."""
-
-    action_type: str  # HOLD, REDUCE_25, REDUCE_50, FULL_EXIT, HEDGE
-    asset: str  # Token address
-    amount: int  # Amount in wei
-    risk_score: int  # 0-100
-    reason: str  # Human-readable justification
+    action_type: str
+    asset: str
+    amount: int
+    amount_out_min: int
+    risk_score: int
+    reason: str
+    portfolio_pct: float
 
     @property
     def action_type_enum(self) -> int:
-        """Map to Solidity enum values."""
         mapping = {
             "HOLD": 0,
             "REDUCE_25": 1,
@@ -39,9 +26,7 @@ class ProtectiveAction:
 
 
 class DecisionMaker:
-    """Maps risk scores to concrete protective actions."""
 
-    # Risk score -> action mapping
     ACTION_MAP = {
         (0, 30): "HOLD",
         (31, 50): "REDUCE_25",
@@ -50,7 +35,13 @@ class DecisionMaker:
         (86, 100): "FULL_EXIT",
     }
 
-    # Asset-specific thresholds for de-peg detection
+    REDUCTION_PCT = {
+        "REDUCE_25": 0.25,
+        "REDUCE_50": 0.50,
+        "FULL_EXIT": 1.0,
+        "HEDGE": 0.50,
+    }
+
     ASSET_THRESHOLDS = {
         "USDY": {
             "warn": 0.005,
@@ -77,17 +68,13 @@ class DecisionMaker:
 
     def __init__(self, config: dict = None):
         self.config = config or {}
+        self.asset_addresses = {
+            "mETH": config.get("METH_TOKEN", ""),
+            "USDY": config.get("USDY_TOKEN", ""),
+            "fBTC": config.get("FBTC_TOKEN", ""),
+        } if config else {}
 
     def get_recommendation(self, risk_score: float) -> str:
-        """
-        Get recommended action type for a given risk score.
-
-        Args:
-            risk_score: Composite risk score 0-100
-
-        Returns:
-            Action type string
-        """
         score = int(risk_score)
         for (low, high), action in self.ACTION_MAP.items():
             if low <= score <= high:
@@ -97,44 +84,41 @@ class DecisionMaker:
     def build_action(
         self,
         risk_score: float,
-        asset_address: str,
-        amount: int,
+        asset_symbol: str,
+        portfolio_size_usd: float,
+        slippage_bps: int = 100,
         reason: str = "",
-    ) -> ProtectiveAction:
-        """
-        Build a complete ProtectiveAction from risk assessment.
-
-        Args:
-            risk_score: Composite risk score 0-100
-            asset_address: Token contract address
-            amount: Position size in wei
-            reason: Human-readable justification
-
-        Returns:
-            ProtectiveAction ready for signing
-        """
+    ) -> Optional[ProtectiveAction]:
         action_type = self.get_recommendation(risk_score)
+        if action_type == "HOLD":
+            return None
+
+        asset_address = self.asset_addresses.get(asset_symbol, "")
+        if not asset_address:
+            logger.error(f"No address for asset {asset_symbol}")
+            return None
+
+        reduction_pct = self.REDUCTION_PCT.get(action_type, 0)
+        amount = int(portfolio_size_usd * reduction_pct)
+        amount_out_min = amount * (10000 - slippage_bps) // 10000
+        if amount_out_min < 1:
+            amount_out_min = 1
+
         return ProtectiveAction(
             action_type=action_type,
             asset=asset_address,
             amount=amount,
+            amount_out_min=amount_out_min,
             risk_score=int(risk_score),
             reason=reason or f"Risk score {risk_score} triggered {action_type}",
+            portfolio_pct=reduction_pct,
         )
 
-    def parse_agent_output(self, output: str) -> Optional[ProtectiveAction]:
-        """
-        Parse the LLM agent's output to extract a ProtectiveAction.
-
-        Args:
-            output: Raw string output from the LangChain agent
-
-        Returns:
-            ProtectiveAction if an action is recommended, None if HOLD
-        """
+    def parse_agent_output(
+        self, output: str, portfolio: Dict = None
+    ) -> Optional[ProtectiveAction]:
         output_upper = output.upper()
 
-        # Detect action type from agent output
         action_type = "HOLD"
         for action in ["FULL_EXIT", "REDUCE_50", "REDUCE_25", "HEDGE"]:
             if action in output_upper:
@@ -144,14 +128,36 @@ class DecisionMaker:
         if action_type == "HOLD":
             return None
 
-        # Extract risk score if mentioned
         score_match = re.search(r"risk\s*score[:\s]*(\d+)", output, re.IGNORECASE)
         risk_score = int(score_match.group(1)) if score_match else 50
 
+        asset_match = re.search(
+            r"(mETH|USDY|fBTC|0x[a-fA-F0-9]{40})", output, re.IGNORECASE
+        )
+        asset_symbol = asset_match.group(1) if asset_match else "USDY"
+
+        amount = 0
+        amount_out_min = 0
+        if portfolio:
+            reduction_pct = self.REDUCTION_PCT.get(action_type, 0)
+            total = sum(portfolio.values()) if isinstance(portfolio, dict) else float(portfolio.get(asset_symbol, 0))
+            amount = int(total * reduction_pct)
+            amount_out_min = amount * 99 // 100
+
+        asset_address = self.asset_addresses.get(asset_symbol, "")
+        if not asset_address:
+            asset_address = asset_symbol if asset_symbol.startswith("0x") else ""
+
         return ProtectiveAction(
             action_type=action_type,
-            asset="",  # Will be set by the execution layer
-            amount=0,  # Will be computed from portfolio
+            asset=asset_address,
+            amount=amount,
+            amount_out_min=amount_out_min,
             risk_score=risk_score,
             reason=output[:200],
+            portfolio_pct=self.REDUCTION_PCT.get(action_type, 0),
         )
+
+
+import logging
+logger = logging.getLogger("SentinelRWA.DecisionMaker")

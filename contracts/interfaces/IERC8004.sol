@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/**
- * @title IERC8004 — AI Agent Identity & Reputation Standard
- * @notice Interface for the ERC-8004 agent registry on Mantle Network
- */
 interface IERC8004 {
     function registerAgent(
         bytes32 agentId,
@@ -17,6 +13,12 @@ interface IERC8004 {
         uint256 riskScore
     ) external;
 
+    function updateActionValueProtected(
+        bytes32 agentId,
+        bytes32 actionId,
+        uint256 valueProtected
+    ) external;
+
     function getReputationScore(
         bytes32 agentId
     ) external view returns (uint256);
@@ -24,4 +26,8 @@ interface IERC8004 {
     function getActionCount(
         bytes32 agentId
     ) external view returns (uint256 successful, uint256 failed);
+
+    function computeReputationScore(
+        bytes32 agentId
+    ) external view returns (uint256);
 }

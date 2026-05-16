@@ -83,27 +83,20 @@ def run_backtest(initial_capital: float = 100000):
 
     for snap in snapshots:
         score = engine.compute_risk_score(snap)
-        action = decision.get_recommendation(score.total)
+        action_type = decision.get_recommendation(score.total)
 
-        # Simulate price impact on unprotected portfolio
         usdy_price = snap["prices"]["USDY"]["usd"]
-        price_change = (usdy_price - 1.0) * 0.6  # 60% USDY exposure
+        price_change = (usdy_price - 1.0) * 0.6
         unprotected_capital = initial_capital * (1 + price_change)
 
-        if action != "HOLD" and position_pct > 0:
-            if action == "REDUCE_25":
-                position_pct *= 0.75
-            elif action == "REDUCE_50":
-                position_pct *= 0.50
-            elif action == "FULL_EXIT":
-                position_pct = 0
-            elif action == "HEDGE":
-                position_pct *= 0.5
+        if action_type != "HOLD" and position_pct > 0:
+            reduction = decision.REDUCTION_PCT.get(action_type, 0)
+            position_pct *= (1.0 - reduction)
 
             actions_taken.append({
                 "day": snap["day"],
                 "hour": snap["hour"],
-                "action": action,
+                "action": action_type,
                 "risk_score": score.total,
                 "usdy_price": usdy_price,
                 "position_remaining": position_pct,
@@ -112,10 +105,9 @@ def run_backtest(initial_capital: float = 100000):
             print(
                 f"  Day {snap['day']} Hour {snap['hour']:02d} | "
                 f"Score: {score.total:5.1f} ({score.level:6s}) | "
-                f"Action: {action:10s} | Position: {position_pct*100:.0f}%"
+                f"Action: {action_type:10s} | Position: {position_pct*100:.0f}%"
             )
 
-        # Sentinel loss = price impact * remaining position
         capital = initial_capital * (1 + price_change * position_pct)
 
     # Final results

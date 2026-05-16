@@ -1,24 +1,15 @@
 // SPDX-License-Identifier: MIT
-// ERC8004Registry.sol — Agent Identity & Reputation on Mantle Network
 pragma solidity ^0.8.24;
 
-/**
- * @title ERC8004Registry
- * @notice Implements the ERC-8004 standard for AI agent identity and
- *         on-chain reputation. Every action executed by Sentinel is
- *         recorded here, building a verifiable performance history.
- * @dev Deployed on Mantle Network (Chain ID: 5000)
- */
 contract ERC8004Registry {
 
-    // ─── STRUCTS ──────────────────────────────────────────────────
     struct AgentProfile {
         address owner;
-        string  metadataURI;          // IPFS: model card, strategy desc
+        string  metadataURI;
         uint256 successfulActions;
         uint256 failedActions;
-        uint256 totalValueProtected;  // cumulative USD protected (18 dec)
-        uint256 reputationScore;      // 0 – 1000
+        uint256 totalValueProtected;
+        uint256 reputationScore;
         uint256 registeredAt;
         uint256 lastActionAt;
     }
@@ -31,12 +22,10 @@ contract ERC8004Registry {
         uint256  valueProtected;
     }
 
-    // ─── STATE ────────────────────────────────────────────────────
     mapping(bytes32 => AgentProfile)                    public agents;
     mapping(bytes32 => ActionRecord[])                  public actionHistory;
     mapping(bytes32 => mapping(address => bool))        public authorizedCallers;
 
-    // ─── EVENTS ───────────────────────────────────────────────────
     event AgentRegistered(
         bytes32 indexed agentId,
         address owner,
@@ -45,7 +34,8 @@ contract ERC8004Registry {
     event ActionRecorded(
         bytes32 indexed agentId,
         bytes32 actionId,
-        uint256 score
+        uint256 score,
+        uint256 valueProtected
     );
     event ReputationUpdated(
         bytes32 indexed agentId,
@@ -60,8 +50,11 @@ contract ERC8004Registry {
         bytes32 indexed agentId,
         address caller
     );
+    event ValueProtectedUpdated(
+        bytes32 indexed agentId,
+        uint256 totalValueProtected
+    );
 
-    // ─── MODIFIERS ────────────────────────────────────────────────
     modifier onlyAgentOwner(bytes32 agentId) {
         require(
             agents[agentId].owner == msg.sender,
@@ -70,14 +63,6 @@ contract ERC8004Registry {
         _;
     }
 
-    // ─── REGISTRATION ─────────────────────────────────────────────
-
-    /**
-     * @notice Register a new AI agent with an on-chain identity.
-     * @param agentId   Unique 32-byte identifier for the agent
-     * @param metadataURI IPFS URI pointing to agent model card
-     * @return The registered agent ID
-     */
     function registerAgent(
         bytes32 agentId,
         string calldata metadataURI
@@ -93,7 +78,7 @@ contract ERC8004Registry {
             successfulActions: 0,
             failedActions: 0,
             totalValueProtected: 0,
-            reputationScore: 500,    // start at neutral
+            reputationScore: 500,
             registeredAt: block.timestamp,
             lastActionAt: 0
         });
@@ -102,12 +87,6 @@ contract ERC8004Registry {
         return agentId;
     }
 
-    // ─── AUTHORIZATION ────────────────────────────────────────────
-
-    /**
-     * @notice Authorize a contract (e.g. SentinelExecutor) to record
-     *         actions on behalf of this agent.
-     */
     function authorizeCaller(
         bytes32 agentId,
         address caller
@@ -116,9 +95,6 @@ contract ERC8004Registry {
         emit CallerAuthorized(agentId, caller);
     }
 
-    /**
-     * @notice Revoke a previously authorized caller.
-     */
     function revokeCaller(
         bytes32 agentId,
         address caller
@@ -127,15 +103,6 @@ contract ERC8004Registry {
         emit CallerRevoked(agentId, caller);
     }
 
-    // ─── ACTION RECORDING ─────────────────────────────────────────
-
-    /**
-     * @notice Record an action taken by the agent. Only callable by
-     *         authorized contracts (e.g. SentinelExecutor).
-     * @param agentId  The agent's identity hash
-     * @param actionId Unique action identifier
-     * @param riskScore Risk score at time of action (0–100)
-     */
     function recordAction(
         bytes32 agentId,
         bytes32 actionId,
@@ -147,8 +114,6 @@ contract ERC8004Registry {
         );
 
         AgentProfile storage profile = agents[agentId];
-
-        // Action taken before catastrophic breach (score <= 80) = success
         bool success = riskScore <= 80;
 
         actionHistory[agentId].push(ActionRecord({
@@ -168,24 +133,38 @@ contract ERC8004Registry {
         _updateReputationScore(agentId);
         profile.lastActionAt = block.timestamp;
 
-        emit ActionRecorded(agentId, actionId, riskScore);
+        emit ActionRecorded(agentId, actionId, riskScore, 0);
     }
 
-    // ─── QUERIES ──────────────────────────────────────────────────
+    function updateActionValueProtected(
+        bytes32 agentId,
+        bytes32 actionId,
+        uint256 valueProtected
+    ) external {
+        require(
+            authorizedCallers[agentId][msg.sender],
+            "ERC8004: not authorized"
+        );
 
-    /**
-     * @notice Get the current reputation score for an agent.
-     * @return Score between 0 and 1000
-     */
+        ActionRecord[] storage history = actionHistory[agentId];
+        uint256 len = history.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (history[i].actionId == actionId) {
+                history[i].valueProtected = valueProtected;
+                break;
+            }
+        }
+
+        agents[agentId].totalValueProtected += valueProtected;
+        emit ValueProtectedUpdated(agentId, agents[agentId].totalValueProtected);
+    }
+
     function getReputationScore(
         bytes32 agentId
     ) external view returns (uint256) {
         return agents[agentId].reputationScore;
     }
 
-    /**
-     * @notice Get action counts for an agent.
-     */
     function getActionCount(
         bytes32 agentId
     ) external view returns (uint256 successful, uint256 failed) {
@@ -193,25 +172,39 @@ contract ERC8004Registry {
         return (p.successfulActions, p.failedActions);
     }
 
-    /**
-     * @notice Get the full action history for an agent.
-     */
     function getActionHistory(
         bytes32 agentId
     ) external view returns (ActionRecord[] memory) {
         return actionHistory[agentId];
     }
 
-    /**
-     * @notice Get the full agent profile.
-     */
     function getAgentProfile(
         bytes32 agentId
     ) external view returns (AgentProfile memory) {
         return agents[agentId];
     }
 
-    // ─── INTERNAL ─────────────────────────────────────────────────
+    function computeReputationScore(
+        bytes32 agentId
+    ) public view returns (uint256) {
+        AgentProfile storage p = agents[agentId];
+        uint256 total = p.successfulActions + p.failedActions;
+        if (total == 0) return 500;
+
+        uint256 base = (p.successfulActions * 1000) / total;
+
+        uint256 tenureBonus = 0;
+        if (p.registeredAt > 0) {
+            uint256 daysSinceRegistration = (block.timestamp - p.registeredAt) / 86400;
+            tenureBonus = daysSinceRegistration * 2;
+            if (tenureBonus > 100) tenureBonus = 100;
+        }
+
+        uint256 result = base + tenureBonus;
+        if (result > 1000) result = 1000;
+
+        return result;
+    }
 
     function _updateReputationScore(bytes32 agentId) internal {
         AgentProfile storage p = agents[agentId];
@@ -219,7 +212,7 @@ contract ERC8004Registry {
         if (total == 0) return;
 
         uint256 oldScore = p.reputationScore;
-        p.reputationScore = (p.successfulActions * 1000) / total;
+        p.reputationScore = computeReputationScore(agentId);
 
         emit ReputationUpdated(agentId, oldScore, p.reputationScore);
     }
