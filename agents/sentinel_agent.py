@@ -4,7 +4,7 @@ import time
 import logging
 import os
 
-from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.tools import StructuredTool
@@ -47,8 +47,9 @@ Always consider gas costs and slippage before executing.
 class SentinelAgent:
 
     def __init__(self, config: dict):
-        self.llm = ChatAnthropic(
-            model="claude-sonnet-4-20250514",
+        self.llm = ChatGoogleGenerativeAI(
+            model=config.get("GEMINI_MODEL", "gemini-2.5-flash"),
+            google_api_key=config.get("GEMINI_API_KEY", ""),
             temperature=0,
             max_tokens=2048,
         )
@@ -176,7 +177,8 @@ def main():
         "MANTLE_RPC_URL": os.getenv("MANTLE_RPC_URL", "https://rpc.mantle.xyz"),
         "SENTINEL_EXECUTOR_ADDRESS": os.getenv("SENTINEL_EXECUTOR_ADDRESS", ""),
         "ERC8004_REGISTRY_ADDRESS": os.getenv("ERC8004_REGISTRY_ADDRESS", ""),
-        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+        "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
+        "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "TELEGRAM_CHAT_ID": os.getenv("TELEGRAM_CHAT_ID", ""),
         "PYTH_HERMES_URL": os.getenv("PYTH_HERMES_URL", "https://hermes.pyth.network"),
