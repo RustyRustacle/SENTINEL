@@ -158,6 +158,10 @@ The system computes a composite risk score using five weighted vectors:
 
 ---
 
+## Contributors
+- [Rusty](https://github.com/RustyRustacle)
+- [Heika](https://github.com/aryahaikakusuma)
+
 ## 📜 License & Disclaimer
 
 This project is licensed under the MIT License. 
